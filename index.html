@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gospel Tracker</title>
+  <meta name="description" content="Log gospel conversations, follow-ups and doors knocked.">
+  <meta name="theme-color" content="#1d4f73">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fishing">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/log" class="brand">🐟 Gospel Tracker</a>
+    <span id="sync" class="sync" hidden></span>
+    <a href="#/settings" class="gear" aria-label="Settings" data-nav="settings">⚙︎</a>
+  </header>
+
+  <main id="main"></main>
+
+  <nav class="tabs" id="tabs">
+    <a href="#/log" data-nav="log"><span>✚</span>Log</a>
+    <a href="#/followups" data-nav="followups"><span>☑︎</span>Follow-ups</a>
+    <a href="#/people" data-nav="people"><span>☺︎</span>People</a>
+    <a href="#/map" data-nav="map"><span>⌖</span>Map</a>
+    <a href="#/stats" data-nav="stats"><span>▮</span>Stats</a>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
+</body>
+</html>
