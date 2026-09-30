@@ -1,5 +1,6 @@
 import * as store from './db.js';
 import { db, q } from './db.js';
+import { FLOW, LIGHTS_GUIDE, TOOLS } from './training.js';
 
 // --- Options ------------------------------------------------------------------
 
@@ -17,7 +18,7 @@ const OUTCOMES = {
   come_back: 'Come back later',
   skip: 'Vacant / skip',
 };
-const LIGHTS = { green: 'Green light', yellow: 'Yellow light', red: 'Red light' };
+const LIGHTS = { green: 'Green light', yellow: 'Yellow light', red: 'Red light', believer: 'Believer' };
 const RESPONSES = { accepted: 'Accepted Christ', interested: 'Interested', rejected: 'Rejected' };
 const FOLLOW_KINDS = {
   visit: 'Return visit',
@@ -132,6 +133,7 @@ const routes = {
   doors: viewDoors,
   stats: viewStats,
   settings: viewSettings,
+  training: viewTraining,
 };
 
 async function render() {
@@ -143,6 +145,7 @@ async function render() {
   document.querySelectorAll('[data-nav]').forEach((a) =>
     a.classList.toggle('active', a.dataset.nav === ({ person: 'people', doors: 'map' }[route] ?? route)));
   main.innerHTML = '<p class="muted">Loading…</p>';
+  window.scrollTo(0, 0);
   try {
     await routes[route](arg);
   } catch (err) {
@@ -151,7 +154,6 @@ async function render() {
       <p>${esc(err.message || err)}</p>
       <p class="small muted">If you're offline, you can still log doors and conversations on the Log tab — they'll sync later.</p></div>`;
   }
-  window.scrollTo(0, 0);
 }
 
 function updateSyncBadge(count, error) {
@@ -260,10 +262,10 @@ function viewLog() {
       </section>
 
       <section class="card">
-        <h2>What was shared?</h2>
+        <h2>What was shared? <a href="#/training" class="small" style="float:right;font-weight:500">📖 Training</a></h2>
         ${chips('shared', METHODS)}
         <label>Light</label>
-        ${chips('light', { green: 'Green', yellow: 'Yellow', red: 'Red' }, [], { single: true, cls: 'seg' })}
+        ${chips('light', { green: 'Green', yellow: 'Yellow', red: 'Red', believer: 'Believer' }, [], { single: true, cls: 'seg four' })}
         <label>Response</label>
         ${chips('response', RESPONSES, [], { single: true, cls: 'seg' })}
         <label for="vnotes">Conversation notes</label>
@@ -692,6 +694,8 @@ async function viewPerson(id) {
         <label for="enotes">Other notes</label><textarea id="enotes">${esc(person.notes)}</textarea>
         <button class="primary big" style="margin-top:12px">Save changes</button>
       </form>
+      <button type="button" class="danger big" id="deletePerson" style="margin-top:18px">🗑 Delete ${esc(person.name)}</button>
+      <p class="small muted">Removes their details, prayer request, follow-ups and conversation notes. Their door knocks stay on the map and in the stats, without their name.</p>
     </details>
 
     ${person.prayer_request ? `<section class="card"><h2>🙏 Prayer request</h2><p style="margin:0">${esc(person.prayer_request)}</p></section>` : ''}
@@ -715,6 +719,16 @@ async function viewPerson(id) {
       toast('Follow-up added');
       viewPerson(id);
     } catch (err) { toast(`Couldn't save: ${err.message}`); }
+  });
+
+  $('#deletePerson').addEventListener('click', async () => {
+    if (!confirm(`Delete ${person.name}? This can't be undone.`)) return;
+    try {
+      await q(db().from('visits').update({ notes: null }).eq('person_id', id));
+      await q(db().from('people').delete().eq('id', id));
+      toast(`${person.name} deleted`);
+      location.hash = '#/people';
+    } catch (err) { toast(`Couldn't delete: ${err.message}`); }
   });
 
   $('#editPerson').addEventListener('submit', async (e) => {
@@ -771,6 +785,7 @@ async function viewDoors() {
       <span><span class="dot green"></span>Green</span>
       <span><span class="dot yellow"></span>Yellow</span>
       <span><span class="dot red"></span>Red</span>
+      <span><span class="dot believer"></span>Believer</span>
       <span><span class="swatch"></span>No answer</span>
       <span><span class="swatch" style="border:2px solid var(--red)"></span>Not interested</span>
       <span><span class="swatch" style="border:2px dashed var(--blue)"></span>Come back</span>
@@ -828,6 +843,7 @@ async function viewMap() {
       <span><span class="pin green"></span>Green</span>
       <span><span class="pin yellow"></span>Yellow</span>
       <span><span class="pin red"></span>Red</span>
+      <span><span class="pin believer"></span>Believer</span>
       <span><span class="pin none"></span>Talked, no light</span>
       <span><span class="pin green accepted">✝</span>Accepted Christ</span>
       <span><span class="pin green fu"></span>Open follow-up</span>
@@ -888,6 +904,7 @@ async function viewMap() {
     <span><span class="dot green"></span><b>${n((d) => d.convo?.light === 'green')}</b></span>
     <span><span class="dot yellow"></span><b>${n((d) => d.convo?.light === 'yellow')}</b></span>
     <span><span class="dot red"></span><b>${n((d) => d.convo?.light === 'red')}</b></span>
+    <span><span class="dot believer"></span><b>${n((d) => d.convo?.light === 'believer')}</b> believers</span>
     <span>✝ <b>${n((d) => d.accepted)}</b> accepted</span>
     <span><b>${n((d) => d.fu)}</b> follow-ups open</span>`;
   const missing = shown.length - placed.length;
@@ -1037,6 +1054,43 @@ async function viewStats() {
     try { await navigator.clipboard.writeText(lines.join('\n')); toast('Report copied'); }
     catch { toast('Couldn\'t copy on this device'); }
   });
+}
+
+// --- Training -----------------------------------------------------------------
+
+function viewTraining(open) {
+  const lines = (arr) => arr.map((l) => (l.startsWith('  ')
+    ? `<li class="sub">${esc(l.trim().replace(/^•\s*/, ''))}</li>`
+    : `<li>${esc(l)}</li>`)).join('');
+  main.innerHTML = `
+    <h1>📖 Training</h1>
+    <section class="card">
+      <h2>${esc(FLOW.title)}</h2>
+      <ol class="flow">${FLOW.steps.map(([t, d]) => `<li><b>${esc(t)}</b>: ${esc(d)}</li>`).join('')}</ol>
+    </section>
+
+    ${TOOLS.map((t) => `
+      <details class="card tool" id="t-${t.id}" ${open === t.id ? 'open' : ''}>
+        <summary><b>${esc(t.title)}</b> <span class="badge">${esc(t.time)}</span></summary>
+        <p>${esc(t.why)}</p>
+        <h3>How</h3>
+        ${t.steps.some((l) => l.startsWith('  '))
+          ? `<ul class="steps grouped">${lines(t.steps)}</ul>`
+          : `<ol class="steps">${lines(t.steps)}</ol>`}
+        <h3>Say it like this</h3>
+        <blockquote>${esc(t.say)}</blockquote>
+        <h3>Tips</h3>
+        <ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+        <p class="small muted">📜 ${esc(t.verses)}</p>
+      </details>`).join('')}
+
+    <section class="card">
+      <h2>Marking the response</h2>
+      ${LIGHTS_GUIDE.map(([k, label, text]) => `
+        <p><span class="badge"><span class="dot ${k}"></span>${esc(label)}</span><br>${esc(text)}</p>`).join('')}
+    </section>
+    <p class="small muted">Practice in pairs before you go out: pray, share your 15-second testimony, then the Jesus Story or 3 Circles, and ask for a response.</p>`;
+  if (open) $(`#t-${open}`)?.scrollIntoView();
 }
 
 // --- Settings -----------------------------------------------------------------

@@ -94,7 +94,7 @@ create table if not exists public.visits (
   outcome text not null check (outcome in ('conversation','no_answer','not_interested','come_back','skip')),
   person_id uuid references public.people(id) on delete set null,
   shared text[] not null default '{}',
-  light text check (light in ('green','yellow','red')),
+  light text check (light in ('green','yellow','red','believer')),
   response text check (response in ('accepted','interested','rejected')),
   notes text,
   lat double precision,
@@ -106,6 +106,9 @@ create table if not exists public.visits (
 alter table public.visits add column if not exists lat double precision;
 alter table public.visits add column if not exists lng double precision;
 alter table public.visits add column if not exists accuracy real;
+-- For databases created before the Believer option was added:
+alter table public.visits drop constraint if exists visits_light_check;
+alter table public.visits add constraint visits_light_check check (light in ('green','yellow','red','believer'));
 
 create table if not exists public.follow_ups (
   id uuid primary key default gen_random_uuid(),

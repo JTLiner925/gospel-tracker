@@ -295,3 +295,30 @@ button:disabled { opacity: .5; }
 @media (prefers-color-scheme: dark) {
   .map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
 }
+
+/* Believer (4th light) */
+:root { --believer: #7b4dd6; }
+@media (prefers-color-scheme: dark) { :root { --believer: #a07ef0; } }
+.seg.four { grid-template-columns: repeat(4, 1fr); }
+.seg.four .chip { padding: 8px 4px; }
+.seg .chip[data-value="believer"][aria-pressed="true"] { background: var(--believer); border-color: var(--believer); }
+.dot.believer { background: var(--believer); }
+.pin.believer { background: var(--believer); }
+.pin.fu::after { background: #1d4f73; }
+.fu-note { color: #1d4f73; }
+.unit.conversation.believer { background: var(--believer); color: #fff; border-color: var(--believer); }
+.bar .fill.believer { background: var(--believer); }
+
+/* Delete */
+button.danger { background: var(--danger-bg); border-color: var(--red); color: var(--red); }
+
+/* Training */
+.tool summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; font-size: 17px; }
+.tool p { margin: 12px 0 0; }
+.steps, .flow, .tool ul { padding-left: 22px; margin: 6px 0; }
+.steps li, .flow li, .tool ul li { margin-bottom: 6px; }
+.steps li.sub { list-style: disc; margin-left: 18px; }
+blockquote { margin: 6px 0; padding: 10px 12px; background: var(--chip); border-left: 4px solid var(--accent); border-radius: 8px; font-style: italic; }
+.steps.grouped { list-style: none; padding-left: 0; }
+.steps.grouped > li:not(.sub) { font-weight: 700; margin-top: 10px; }
+.tool { scroll-margin-top: 70px; }
