@@ -1,6 +1,5 @@
 import * as store from './db.js';
 import { db, q } from './db.js';
-import { FLOW, LIGHTS_GUIDE, TOOLS } from './training.js';
 
 // --- Options ------------------------------------------------------------------
 
@@ -18,6 +17,12 @@ const OUTCOMES = {
   come_back: 'Come back later',
   skip: 'Vacant / skip',
 };
+// Trainings are stored in the visit's `shared` list as "trained_<tool>", so no extra column is needed.
+const TRAINED = 'trained_';
+const sharedOf = (v) => (v.shared ?? []).filter((s) => !s.startsWith(TRAINED));
+const trainedOf = (v) => (v.shared ?? []).filter((s) => s.startsWith(TRAINED)).map((s) => s.slice(TRAINED.length));
+const methodList = (keys) => keys.map((k) => esc(METHODS[k] ?? k)).join(', ');
+
 const LIGHTS = { green: 'Green light', yellow: 'Yellow light', red: 'Red light', believer: 'Believer' };
 const RESPONSES = { accepted: 'Accepted Christ', interested: 'Interested', rejected: 'Rejected' };
 const FOLLOW_KINDS = {
@@ -133,7 +138,6 @@ const routes = {
   doors: viewDoors,
   stats: viewStats,
   settings: viewSettings,
-  training: viewTraining,
 };
 
 async function render() {
@@ -262,8 +266,10 @@ function viewLog() {
       </section>
 
       <section class="card">
-        <h2>What was shared? <a href="#/training" class="small" style="float:right;font-weight:500">📖 Training</a></h2>
+        <h2>What was shared?</h2>
         ${chips('shared', METHODS)}
+        <label>Trained them on</label>
+        ${chips('trained', METHODS)}
         <label>Light</label>
         ${chips('light', { green: 'Green', yellow: 'Yellow', red: 'Red', believer: 'Believer' }, [], { single: true, cls: 'seg four' })}
         <label>Response</label>
@@ -490,7 +496,7 @@ function viewLog() {
     const visit = {
       ...baseVisit('conversation'),
       person_id: personId,
-      shared: chipValues('shared'),
+      shared: [...chipValues('shared'), ...chipValues('trained').map((k) => TRAINED + k)],
       light: chipValue('light'),
       response: chipValue('response'),
       notes: val('#vnotes'),
@@ -641,7 +647,8 @@ async function viewPerson(id) {
       <div class="tl">
         <div class="small muted">${fmtDateTime(v.visited_at)}${v.fisher_ids.length ? ` · with ${v.fisher_ids.map(teamName).map(esc).join(', ')}` : ''}</div>
         <div><b>Conversation</b> ${lightDot(v.light)} ${responseBadge(v.response)}</div>
-        ${v.shared.length ? `<div class="small">Shared: ${v.shared.map((s) => esc(METHODS[s] ?? s)).join(', ')}</div>` : ''}
+        ${sharedOf(v).length ? `<div class="small">Shared: ${methodList(sharedOf(v))}</div>` : ''}
+        ${trainedOf(v).length ? `<div class="small">🎓 Trained on: ${methodList(trainedOf(v))}</div>` : ''}
         ${v.notes ? `<div class="small">${esc(v.notes)}</div>` : ''}
       </div>` })),
     ...followUps.map((f) => ({ at: f.done_at ?? f.created_at, html: `
@@ -948,7 +955,8 @@ async function viewMap() {
         ${c ? `
           <hr>
           <div>${c.people?.name ? `<a href="#/person/${c.person_id}">${esc(c.people.name)}</a>` : 'Conversation'} ${lightDot(c.light)} ${responseBadge(c.response)}</div>
-          ${c.shared.length ? `<div class="small">Shared: ${c.shared.map((s) => esc(METHODS[s] ?? s)).join(', ')}</div>` : ''}
+          ${sharedOf(c).length ? `<div class="small">Shared: ${methodList(sharedOf(c))}</div>` : ''}
+          ${trainedOf(c).length ? `<div class="small">🎓 Trained on: ${methodList(trainedOf(c))}</div>` : ''}
           ${c.fisher_ids.length ? `<div class="small">With: ${c.fisher_ids.map(teamName).map(esc).join(', ')}</div>` : ''}
           ${c.notes ? `<div class="small muted">${esc(c.notes)}</div>` : ''}` : ''}
         ${d.fu ? `<div class="small fu-note">⚑ Follow-up: ${d.fu.kinds.map((k) => esc(FOLLOW_KINDS[k] ?? k)).join(', ')}${d.fu.due_date ? `, due ${fmtDate(d.fu.due_date + 'T12:00')}` : ''}${d.fu.assigned_to ? ` · ${esc(teamName(d.fu.assigned_to))}` : ''}</div>` : ''}
@@ -1002,6 +1010,8 @@ async function viewStats() {
 
   const tally = (keys, fn) => keys.map((k) => [k, fn(k)]);
   const byMethod = tally(Object.keys(METHODS), (k) => count(convos, (v) => v.shared.includes(k)));
+  const byTrained = tally(Object.keys(METHODS), (k) => count(convos, (v) => v.shared.includes(TRAINED + k)));
+  const trained = count(convos, (v) => trainedOf(v).length > 0);
   const byLight = tally(Object.keys(LIGHTS), (k) => count(convos, (v) => v.light === k));
   const byResponse = tally(Object.keys(RESPONSES), (k) => count(convos, (v) => v.response === k));
   const byComplex = lists.complexes.map((c) => [c.id, count(convos, (v) => v.complex_id === c.id)]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
@@ -1028,11 +1038,13 @@ async function viewStats() {
       <div class="kpi"><div class="v">${visits.length}</div><div class="l">Doors knocked</div></div>
       <div class="kpi"><div class="v">${convos.length}</div><div class="l">Conversations</div></div>
       <div class="kpi"><div class="v">${gospel}</div><div class="l">Gospel shared (3 Circles / Jesus Story)</div></div>
+      <div class="kpi"><div class="v">${trained}</div><div class="l">People trained</div></div>
       <div class="kpi"><div class="v">${accepted}</div><div class="l">Accepted Christ</div></div>
       <div class="kpi"><div class="v">${interested}</div><div class="l">Interested</div></div>
       <div class="kpi"><div class="v">${openFu.length}</div><div class="l">Open follow-ups${overdue ? ` <span class="overdue">(${overdue} overdue)</span>` : ''}</div></div>
     </div>
     <section class="card"><h2>What was shared</h2>${bars(byMethod, (k) => esc(METHODS[k]))}</section>
+    <section class="card"><h2>What people were trained on</h2>${bars(byTrained, (k) => esc(METHODS[k]))}</section>
     <section class="card"><h2>Light</h2>${bars(byLight, (k) => `${lightDot(k)} ${esc(LIGHTS[k])}`, (k) => k)}</section>
     <section class="card"><h2>Response</h2>${bars(byResponse, (k) => esc(RESPONSES[k]))}</section>
     <section class="card"><h2>Conversations by place</h2>${bars(byComplex, (k) => esc(complexName(k)))}</section>
@@ -1045,6 +1057,8 @@ async function viewStats() {
       `Doors knocked: ${visits.length}`,
       `Conversations: ${convos.length}`,
       `Gospel shared: ${gospel}`,
+      `People trained: ${trained}`,
+      `Trained on: ${byTrained.map(([k, n]) => `${METHODS[k]} ${n}`).join(', ')}`,
       `Accepted Christ: ${accepted}`,
       `Interested: ${interested}`,
       `Lights: ${byLight.map(([k, n]) => `${k} ${n}`).join(', ')}`,
@@ -1054,43 +1068,6 @@ async function viewStats() {
     try { await navigator.clipboard.writeText(lines.join('\n')); toast('Report copied'); }
     catch { toast('Couldn\'t copy on this device'); }
   });
-}
-
-// --- Training -----------------------------------------------------------------
-
-function viewTraining(open) {
-  const lines = (arr) => arr.map((l) => (l.startsWith('  ')
-    ? `<li class="sub">${esc(l.trim().replace(/^•\s*/, ''))}</li>`
-    : `<li>${esc(l)}</li>`)).join('');
-  main.innerHTML = `
-    <h1>📖 Training</h1>
-    <section class="card">
-      <h2>${esc(FLOW.title)}</h2>
-      <ol class="flow">${FLOW.steps.map(([t, d]) => `<li><b>${esc(t)}</b>: ${esc(d)}</li>`).join('')}</ol>
-    </section>
-
-    ${TOOLS.map((t) => `
-      <details class="card tool" id="t-${t.id}" ${open === t.id ? 'open' : ''}>
-        <summary><b>${esc(t.title)}</b> <span class="badge">${esc(t.time)}</span></summary>
-        <p>${esc(t.why)}</p>
-        <h3>How</h3>
-        ${t.steps.some((l) => l.startsWith('  '))
-          ? `<ul class="steps grouped">${lines(t.steps)}</ul>`
-          : `<ol class="steps">${lines(t.steps)}</ol>`}
-        <h3>Say it like this</h3>
-        <blockquote>${esc(t.say)}</blockquote>
-        <h3>Tips</h3>
-        <ul>${t.tips.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-        <p class="small muted">📜 ${esc(t.verses)}</p>
-      </details>`).join('')}
-
-    <section class="card">
-      <h2>Marking the response</h2>
-      ${LIGHTS_GUIDE.map(([k, label, text]) => `
-        <p><span class="badge"><span class="dot ${k}"></span>${esc(label)}</span><br>${esc(text)}</p>`).join('')}
-    </section>
-    <p class="small muted">Practice in pairs before you go out: pray, share your 15-second testimony, then the Jesus Story or 3 Circles, and ask for a response.</p>`;
-  if (open) $(`#t-${open}`)?.scrollIntoView();
 }
 
 // --- Settings -----------------------------------------------------------------

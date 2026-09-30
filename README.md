@@ -2,12 +2,11 @@
 
 A phone-friendly web app for tracking gospel conversations while out fishing at apartment complexes.
 
-- **Log** – choose the team members out today and the complex, building and apartment number, then tap what happened at the door. For a conversation, it records the person, what was shared (Care through Prayer, 15-second testimony, 3 Circles, Jesus Story, DBS), the red/yellow/green light, the response (rejected / interested / accepted Christ) and the follow-up needed.
+- **Log** – choose the team members out today and the complex, building and apartment number, then tap what happened at the door. For a conversation, it records the person, what was shared (Care through Prayer, 15-second testimony, 3 Circles, Jesus Story, DBS), which tools you trained them on, the red/yellow/green light, the response (rejected / interested / accepted Christ) and the follow-up needed.
 - **Follow-ups** – who needs a visit, what kind, who's assigned, and when it's due. Tap ✓ Done.
 - **People** – search everyone. Each person has a timeline of every conversation and follow-up.
 - **Map** – every door the team has knocked, on a street map. Pins are colored green/yellow/red by light, ✝ marks someone who accepted Christ, and a purple dot marks an open follow-up. Tap a pin to see the person, what was shared, who went and the next step. Filter by date, place, conversations only, accepted Christ, open follow-ups, or "no answer / come back" for doors to revisit. The **Door grid** tab shows the same doors as tiles by building or street.
 - **Location** – each door is pinned using the phone's GPS when it's logged. The first time, the phone asks to allow location for the site: tap **Allow**. Doors logged with location off still count everywhere, but they don't appear on the map.
-- **Training** (📖 at the top) – how to use Care through Prayer, the 15-second testimony, 3 Circles, the Jesus Story and Discovery Bible Study, plus what Green / Yellow / Red / Believer mean. Edit the wording in `training.js`.
 - **Deleting a person** – open the person → Edit details → Delete. Their details, prayer request, follow-ups and conversation notes are removed. Their door knocks stay in the map and stats without a name.
 - **Stats** – doors knocked, conversations, gospel shares, salvations and breakdowns. **Copy report** puts a text summary on the clipboard for leaders.
 - **Works offline** – entries save on the phone and sync automatically when signal comes back.

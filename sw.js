@@ -1,6 +1,6 @@
 // Keeps the app itself available with no signal. Data calls to Supabase are never cached.
-const CACHE = 'gospel-tracker-v3';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'training.js', 'config.js', 'manifest.webmanifest', 'icon.svg'];
+const CACHE = 'gospel-tracker-v4';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'db.js', 'config.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

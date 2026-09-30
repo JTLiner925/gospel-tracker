@@ -312,13 +312,3 @@ button:disabled { opacity: .5; }
 /* Delete */
 button.danger { background: var(--danger-bg); border-color: var(--red); color: var(--red); }
 
-/* Training */
-.tool summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; font-size: 17px; }
-.tool p { margin: 12px 0 0; }
-.steps, .flow, .tool ul { padding-left: 22px; margin: 6px 0; }
-.steps li, .flow li, .tool ul li { margin-bottom: 6px; }
-.steps li.sub { list-style: disc; margin-left: 18px; }
-blockquote { margin: 6px 0; padding: 10px 12px; background: var(--chip); border-left: 4px solid var(--accent); border-radius: 8px; font-style: italic; }
-.steps.grouped { list-style: none; padding-left: 0; }
-.steps.grouped > li:not(.sub) { font-weight: 700; margin-top: 10px; }
-.tool { scroll-margin-top: 70px; }
