@@ -5,6 +5,8 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 const CODE_KEY = 'gt.teamCode';
 const ADMIN_KEY = 'gt.adminCode';
 const ADMIN_STATE_KEY = 'gt.adminState';
+const VERSION_KEY = 'gt.dbVersion';
+const ME_KEY = 'gt.me';
 const LISTS_KEY = 'gt.lists';
 const QUEUE_KEY = 'gt.queue';
 
@@ -88,8 +90,40 @@ export async function refreshAdmin() {
   }
   if (state === 'no' && read(ADMIN_KEY, null)) forgetAdmin(); // admin passcode was changed
   write(ADMIN_STATE_KEY, state);
+
+  // Which database update has been run: 0 none, 1 groups + admin, 2 sign-up + groups on places.
+  let version = state === 'legacy' ? 0 : 1;
+  if (version) {
+    try { version = await q(db().rpc('app_version')); } catch (err) { if (!missing(err)) throw err; }
+  }
+  write(VERSION_KEY, version);
   return state;
 }
+
+export const dbVersion = () => read(VERSION_KEY, 0);
+
+// --- Who is using this phone --------------------------------------------------
+// Each person signs up or signs in once per phone with their own 6-digit passcode.
+
+export const me = () => read(ME_KEY, null);
+
+export function forgetMe() {
+  try { localStorage.removeItem(ME_KEY); } catch {}
+}
+
+export async function signUp(name, pin, groupIds) {
+  const id = await q(db().rpc('sign_up', { p_name: name, p_pin: pin, p_groups: groupIds }));
+  write(ME_KEY, id);
+  return id;
+}
+
+export async function signIn(name, pin) {
+  const id = await q(db().rpc('sign_in', { p_name: name, p_pin: pin }));
+  write(ME_KEY, id);
+  return id;
+}
+
+export const resetPin = (memberId) => q(db().rpc('reset_pin', { p_member: memberId }));
 
 export async function tryAdmin(adminCode) {
   const candidate = makeClient(getCode(), adminCode);

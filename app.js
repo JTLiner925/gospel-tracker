@@ -58,6 +58,9 @@ const activeTeam = () => lists.team.filter((t) => t.active);
 const activeGroups = () => (lists.groups ?? []).filter((g) => g.active);
 const groupName = (id) => (lists.groups ?? []).find((g) => g.id === id)?.name;
 const inGroup = (member, groupId) => !groupId || (member.group_ids ?? []).includes(groupId);
+// For pick lists: something with no group at all is shared with every group.
+const inScope = (item, groupId) => !groupId || !(item.group_ids ?? []).length || item.group_ids.includes(groupId);
+const meMember = () => lists.team.find((t) => t.id === store.me() && t.active);
 const activeComplexes = () => lists.complexes.filter((c) => c.active);
 
 function where(o) {
@@ -68,8 +71,9 @@ function where(o) {
 }
 
 // Places grouped into apartments and neighborhoods.
-function placeOptions(selected, blank, onlyActive = true) {
-  const places = onlyActive ? activeComplexes() : lists.complexes;
+function placeOptions(selected, blank, onlyActive = true, groupId = '') {
+  const places = (onlyActive ? activeComplexes() : lists.complexes)
+    .filter((c) => inScope(c, groupId) || c.id === selected);
   const group = (kind, label) => {
     const items = places.filter((c) => (c.kind ?? 'apartments') === kind);
     return items.length ? `<optgroup label="${label}">${options(items, selected)}</optgroup>` : '';
@@ -145,6 +149,7 @@ const routes = {
 
 async function render() {
   if (!store.getCode()) return viewLogin();
+  if (store.dbVersion() >= 2 && !meMember()) return viewWho();
   document.body.classList.remove('locked');
   leave();
   const [name, arg] = location.hash.replace(/^#\/?/, '').split('/');
@@ -207,6 +212,72 @@ function viewLogin() {
   });
 }
 
+// --- Sign in / sign up (who is using this phone) ------------------------------
+
+function viewWho(mode = 'in', message = '') {
+  leave();
+  document.body.classList.add('locked');
+  const names = activeTeam();
+  const pinInput = (id, label) => `
+    <label for="${id}">${label}</label>
+    <input id="${id}" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" placeholder="6 digits" required>`;
+  main.innerHTML = `
+    <div class="login">
+      <h1>🐟 Gospel Tracker</h1>
+      <div class="viewtabs">
+        <a href="#" data-mode="in" class="${mode === 'in' ? 'active' : ''}">Sign in</a>
+        <a href="#" data-mode="up" class="${mode === 'up' ? 'active' : ''}">Sign up</a>
+      </div>
+      ${mode === 'in' ? `
+        <form class="card" id="who">
+          <label for="whoName">Your name</label>
+          <select id="whoName" required>${options(names.map((t) => ({ id: t.name, name: t.name })), null, 'Choose your name…')}</select>
+          ${pinInput('whoPin', 'Your passcode')}
+          ${message ? `<p class="overdue small">${esc(message)}</p>` : ''}
+          <p class="small muted">Not on the list? Tap Sign up. If a leader added you, the 6 digits you enter the first time become your passcode.</p>
+          <button class="primary big">Sign in</button>
+        </form>` : `
+        <form class="card" id="who">
+          <label for="whoName">Your name</label>
+          <input id="whoName" autocomplete="name" placeholder="First and last name" required>
+          ${activeGroups().length ? `
+            <label>Your group</label>
+            ${chips('mygroups', Object.fromEntries(activeGroups().map((g) => [g.id, g.name])))}
+            <p class="small muted" style="margin:6px 0 0">Pick every group you go out with.</p>` : ''}
+          ${pinInput('whoPin', 'Choose a 6-digit passcode')}
+          ${pinInput('whoPin2', 'Type it again')}
+          ${message ? `<p class="overdue small">${esc(message)}</p>` : ''}
+          <button class="primary big" style="margin-top:12px">Sign up</button>
+        </form>`}
+      <p><button type="button" class="link" id="whoLock">Use a different team passcode</button></p>
+    </div>`;
+
+  $$('[data-mode]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); viewWho(a.dataset.mode); }));
+  $('#whoLock').addEventListener('click', () => { store.forgetCode(); render(); });
+  $('#who').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = val('#whoName'), pin = $('#whoPin').value;
+    if (!/^\d{6}$/.test(pin)) return toast('Your passcode must be exactly 6 digits');
+    if (mode === 'up') {
+      if (pin !== $('#whoPin2').value) return toast('The two passcodes didn\'t match');
+      if (activeGroups().length && !chipValues('mygroups').length) return toast('Pick your group');
+    }
+    const btn = $('button.primary', e.target);
+    btn.disabled = true;
+    try {
+      if (mode === 'up') await store.signUp(name, pin, chipValues('mygroups'));
+      else await store.signIn(name, pin);
+      lists = await store.loadLists();
+      store.write('gt.today', {});
+      toast(mode === 'up' ? `Welcome, ${name}!` : `Hi, ${name}`);
+      if (location.hash === '#/log') render(); else location.hash = '#/log';
+    } catch (err) {
+      toast(err.message || String(err));
+      btn.disabled = false;
+    }
+  });
+}
+
 // --- Log (door knocks + conversations) ----------------------------------------
 
 function viewLog() {
@@ -218,18 +289,24 @@ function viewLog() {
   personForLog = null;
   const loc = prefill ?? day;
 
+  // The chosen group decides which people and places are offered.
+  const groups = activeGroups();
+  const myGroups = (meMember()?.group_ids ?? []).filter((id) => groups.some((g) => g.id === id));
+  const savedGroup = store.read('gt.group', '');
+  const startGroup = !groups.length ? ''
+    : groups.some((g) => g.id === savedGroup) ? savedGroup
+    : myGroups[0] ?? groups[0].id;
+
   main.innerHTML = `<div id="logView">
     <h1>Log a door</h1>
     <section class="card">
+      ${groups.length ? `
+        <label for="group">Group</label>
+        <select id="group">${options(groups, startGroup)}</select>` : ''}
       <label>Who's out fishing</label>
       <div class="multi" id="fishers">
         <button type="button" class="multi-btn" aria-expanded="false"><span id="fishersText"></span><span aria-hidden="true">▾</span></button>
         <div class="multi-panel" hidden>
-          ${activeGroups().length ? `
-            <select id="fisherGroup" aria-label="Show group">
-              <option value="">Everyone</option>
-              ${options(activeGroups(), store.read('gt.fisherGroup', ''))}
-            </select>` : ''}
           <div id="fisherChecks"></div>
           ${store.isAdmin() ? `
             <div class="inline" style="margin-top:8px">
@@ -240,7 +317,7 @@ function viewLog() {
         </div>
       </div>
       <label for="complex">Where</label>
-      <select id="complex">${placeOptions(loc.complex_id, 'Choose a complex or neighborhood…')}</select>
+      <select id="complex">${placeOptions(loc.complex_id, 'Choose a complex or neighborhood…', true, startGroup)}</select>
       <div class="row">
         <div><label for="building" id="buildingLabel">${unitLabels(loc.complex_id)[0]}</label><input id="building" value="${esc(loc.building)}" autocomplete="off"></div>
         <div><label for="unit" id="unitLabel">${unitLabels(loc.complex_id)[1]}</label><input id="unit" inputmode="text" value="${esc(prefill?.unit)}" autocomplete="off"></div>
@@ -313,15 +390,13 @@ function viewLog() {
   // Who's out fishing: dropdown with checkboxes.
   const fisherBox = $('#fishers');
   // Kept apart from the checkboxes so people stay selected when a group filter hides them.
-  const picked = new Set((day.fisher_ids ?? []).filter((id) => activeTeam().some((t) => t.id === id)));
+  // A new day starts with just you checked.
+  const picked = new Set((day.fisher_ids ?? [store.me()]).filter((id) => activeTeam().some((t) => t.id === id)));
   const fisherIds = () => [...picked];
-  const fisherGroup = () => {
-    const id = $('#fisherGroup')?.value ?? '';
-    return activeGroups().some((g) => g.id === id) ? id : '';
-  };
+  const fisherGroup = () => $('#group')?.value ?? '';
   function drawFishers() {
     const group = fisherGroup();
-    const shown = activeTeam().filter((t) => inGroup(t, group) || picked.has(t.id));
+    const shown = activeTeam().filter((t) => inScope(t, group) || picked.has(t.id));
     $('#fisherChecks').innerHTML = shown.map((t) => `
       <label class="check"><input type="checkbox" value="${t.id}" ${picked.has(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')
       || `<p class="small muted">${group ? 'No one is in this group yet.' : 'No team members yet. An admin can add them in Settings.'}</p>`;
@@ -339,9 +414,15 @@ function viewLog() {
   drawFishers();
   $('.multi-btn', fisherBox).addEventListener('click', () => openFishers($('.multi-panel', fisherBox).hidden));
   $('#fishersDone').addEventListener('click', () => openFishers(false));
-  $('#fisherGroup')?.addEventListener('change', () => {
-    store.write('gt.fisherGroup', fisherGroup());
+  $('#group')?.addEventListener('change', () => {
+    const group = fisherGroup();
+    store.write('gt.group', group);
     drawFishers();
+    // Refill the places for this group, keeping the current one only if it belongs.
+    const current = lists.complexes.find((c) => c.id === val('#complex'));
+    const keep = current && inScope(current, group) ? current.id : null;
+    $('#complex').innerHTML = placeOptions(keep, 'Choose a complex or neighborhood…', true, group);
+    if (!keep) $('#complex').dispatchEvent(new Event('change'));
   });
   $('#fisherChecks').addEventListener('change', (e) => {
     if (e.target.checked) picked.add(e.target.value); else picked.delete(e.target.value);
@@ -1117,6 +1198,18 @@ async function viewSettings() {
         </div>`).join('') || '<p class="muted small">None yet.</p>'}
     </div>`;
   const memberGroups = (m) => (m.group_ids ?? []).map(groupName).filter(Boolean);
+  const v2 = store.dbVersion() >= 2;
+  // A row that opens to show group chips (saved as they're tapped) and Hide/Restore.
+  const groupedRow = (table, r, sub = '', extra = '') => `
+    <details class="member ${r.active ? '' : 'inactive'}">
+      <summary><span class="n">${esc(r.name)}${sub}</span>
+        <span class="small muted" data-groups>${memberGroups(r).map(esc).join(', ') || (table === 'complexes' ? 'All groups' : 'No group')}</span></summary>
+      ${activeGroups().length ? `
+        <div class="chips" data-group="mg" data-table="${table}" data-id="${r.id}">
+          ${activeGroups().map((g) => `<button type="button" class="chip" data-value="${g.id}" aria-pressed="${inGroup(r, g.id)}">${esc(g.name)}</button>`).join('')}
+        </div>` : '<p class="small muted">Add a group above first.</p>'}
+      <p style="margin:8px 0 0">${hideBtn(table, r)}${extra}</p>
+    </details>`;
 
   const adminCards = !admin ? '' : `
     ${state === 'legacy' ? `
@@ -1137,24 +1230,22 @@ async function viewSettings() {
       <h2>Team members</h2>
       ${state === 'legacy' ? listHtml('team_members', lists.team) : `
         <div class="settings-list">
-          ${lists.team.map((m) => `
-            <details class="member ${m.active ? '' : 'inactive'}">
-              <summary><span class="n">${esc(m.name)}</span>
-                <span class="small muted">${memberGroups(m).map(esc).join(', ') || 'No group'}</span></summary>
-              ${activeGroups().length ? `
-                <div class="chips" data-group="mg" data-member="${m.id}">
-                  ${activeGroups().map((g) => `<button type="button" class="chip" data-value="${g.id}" aria-pressed="${inGroup(m, g.id)}">${esc(g.name)}</button>`).join('')}
-                </div>` : '<p class="small muted">Add a group above to sort people into groups.</p>'}
-              <p style="margin:8px 0 0">${hideBtn('team_members', m)}</p>
-            </details>`).join('') || '<p class="muted small">None yet.</p>'}
+          ${lists.team.map((m) => groupedRow('team_members', m, m.id === store.me() ? ' (you)' : '',
+            v2 ? ` · <button type="button" class="link" data-reset="${m.id}">Reset passcode</button>` : '')).join('') || '<p class="muted small">None yet.</p>'}
         </div>
-        <p class="small muted">Tap a name to choose their groups. A person can be in more than one.</p>`}
+        <p class="small muted">Tap a name to choose their groups. A person can be in more than one.${v2 ? ' People can also sign up themselves from the sign-in screen.' : ''}</p>`}
       <form class="inline" id="addTeam"><input id="teamName" placeholder="Name" required><button class="primary">Add</button></form>
     </section>
 
     <section class="card">
       <h2>Places (complexes & neighborhoods)</h2>
-      ${listHtml('complexes', lists.complexes, (c) => `<br><span class="small muted">${esc(PLACE_KINDS[c.kind ?? 'apartments'])}${c.address ? ` · ${esc(c.address)}` : ''}</span>`)}
+      ${v2 ? `
+        <div class="settings-list">
+          ${lists.complexes.map((c) => groupedRow('complexes', c,
+            `<br><span class="small muted" style="font-weight:400">${esc(PLACE_KINDS[c.kind ?? 'apartments'])}${c.address ? ` · ${esc(c.address)}` : ''}</span>`)).join('') || '<p class="muted small">None yet.</p>'}
+        </div>
+        <p class="small muted">Tap a place to choose which groups see it. A place with no group shows for every group.</p>`
+        : listHtml('complexes', lists.complexes, (c) => `<br><span class="small muted">${esc(PLACE_KINDS[c.kind ?? 'apartments'])}${c.address ? ` · ${esc(c.address)}` : ''}</span>`)}
       <form id="addComplex">
         <select id="cxKind">${Object.entries(PLACE_KINDS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
         <input id="cxName" placeholder="Name, e.g. Oak Creek Apartments or Brentwood" required style="margin-top:8px">
@@ -1212,6 +1303,8 @@ async function viewSettings() {
 
     <section class="card">
       <h2>This phone</h2>
+      ${meMember() ? `<p>Signed in as <b>${esc(meMember().name)}</b>${memberGroups(meMember()).length ? ` · ${memberGroups(meMember()).map(esc).join(', ')}` : ''}
+        <br><button type="button" class="link" id="signOut" style="padding-left:0">Sign out (someone else is using this phone)</button></p>` : ''}
       ${state === 'yes' ? '<p><button id="leaveAdmin">Leave admin mode</button></p>' : ''}
       <button id="lock">🔒 Lock this phone</button>
       <p class="small muted">Locking signs this phone out. You'll need the team passcode to get back in.</p>
@@ -1229,15 +1322,22 @@ async function viewSettings() {
   }));
   // Group chips under a team member save as soon as they're tapped.
   $$('[data-group="mg"]').forEach((box) => box.addEventListener('chipchange', async () => {
-    const id = box.dataset.member;
+    const { table, id } = box.dataset;
     const group_ids = $$('.chip[aria-pressed="true"]', box).map((c) => c.dataset.value);
     try {
-      await q(db().from('team_members').update({ group_ids }).eq('id', id));
-      const member = lists.team.find((t) => t.id === id);
-      member.group_ids = group_ids;
-      $('summary .muted', box.closest('details')).textContent = memberGroups(member).join(', ') || 'No group';
+      await q(db().from(table).update({ group_ids }).eq('id', id));
+      const row = (table === 'complexes' ? lists.complexes : lists.team).find((t) => t.id === id);
+      row.group_ids = group_ids;
+      $('[data-groups]', box.closest('details')).textContent =
+        memberGroups(row).join(', ') || (table === 'complexes' ? 'All groups' : 'No group');
       store.write('gt.lists', lists);
     } catch (err) { toast(`Couldn't save: ${err.message}`); }
+  }));
+  $$('[data-reset]').forEach((b) => b.addEventListener('click', async () => {
+    const name = teamName(b.dataset.reset);
+    if (!confirm(`Reset ${name}'s passcode? The next 6 digits they sign in with become their new passcode.`)) return;
+    try { await store.resetPin(b.dataset.reset); toast(`${name}'s passcode was reset`); }
+    catch (err) { toast(`Couldn't reset: ${err.message}`); }
   }));
   $('#addGroup')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1271,6 +1371,7 @@ async function viewSettings() {
     } catch (err) { toast(`Couldn't check: ${err.message}`); }
   });
   $('#leaveAdmin')?.addEventListener('click', () => { store.forgetAdmin(); viewSettings(); });
+  $('#signOut')?.addEventListener('click', () => { store.forgetMe(); store.forgetAdmin(); store.write('gt.today', {}); render(); });
   $('#lock').addEventListener('click', () => {
     if (store.queue().length && !confirm('Some entries haven\'t synced yet and will be lost. Lock anyway?')) return;
     try { localStorage.clear(); } catch {}

@@ -11,7 +11,8 @@ A phone-friendly web app for tracking gospel conversations while out fishing at 
 - **Stats** – doors knocked, conversations, gospel shares, salvations and breakdowns. **Copy report** puts a text summary on the clipboard for leaders.
 - **Works offline** – entries save on the phone and sync automatically when signal comes back.
 - **Team passcode** – the database returns nothing without it.
-- **Groups** – admins sort team members into groups (a person can be in several). On the Log screen, "Who's out fishing" has a group filter so the list only shows that group's names.
+- **Groups** – admins sort team members and places into groups (each can be in several). On the Log screen you pick a group first, and "Who's out fishing" and "Where" then show only that group's people and places. A person or place with no group shows for every group.
+- **Sign-up** – after entering the team passcode, each person signs up with their name, their group(s) and their own 6-digit passcode. People a leader added sign in by choosing their name; the 6 digits they enter the first time become their passcode. Admins can reset a forgotten passcode in Settings.
 - **Admin passcode** – a second passcode. Only phones that have entered it (Settings → Admin) can change groups, team members, places or passcodes. The database enforces this, not just the screen.
 
 The code is hosted free on **GitHub Pages** and the data lives in **Supabase**, a free Postgres database. The code can be public because it holds no data.
@@ -43,7 +44,7 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOi...';
 ### 4. First use
 1. Open the link, enter the passcode and go to **⚙︎ Settings**.
 2. Go to **Admin**, enter the admin passcode, then add your groups, team members and places: choose **Apartment complex** or **Neighborhood (houses)** for each.
-3. Send the link and passcode to the team, **separately** (don't put the passcode in the same text as the link).
+3. Send the link and team passcode to the team, **separately** (don't put the passcode in the same text as the link). Each person then taps **Sign up** and picks their group and a 6-digit passcode.
 4. On each phone, allow **location** when asked so doors show on the map.
 5. On iPhone: in Safari, tap Share → **Add to Home Screen**. On Android: in Chrome, tap ⋮ → **Add to Home screen**. It then opens like a normal app.
 
