@@ -11,3 +11,8 @@ Hub page: 3f380be0bac481c6ad18e3719e7b0dd8
 | Door Log   | 3fd1353c48494aaf80092c8ad9d30174 | 119cd6c4-8cd9-4fc2-b9f9-f573399d14ab |
 | Follow-ups | 491faa4aa9e54d10be63dff3383ef498 | 9a9baf32-c760-4fb8-9c4d-e4f058bd3bc5 |
 | Passcodes  | 5c0a0ee874d94bd888b303628101378b | a6d6dcd7-62bf-4f98-a397-93c953e8fd68 |
+
+Subpages of the hub (views only, no data of their own):
+- Fishing Tracker: 3f380be0bac4811491a1d13a626cf214
+- Places: 3f380be0bac481f8bcd2e910d46492f1
+- Team: 3f380be0bac4814e9dd5c1a3026a55f9
