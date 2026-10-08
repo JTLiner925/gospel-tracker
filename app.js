@@ -299,10 +299,15 @@ function viewLog() {
 
   main.innerHTML = `<div id="logView">
     <h1>Log a door</h1>
+    ${meMember() ? `
+      <p class="whoami">👤 <b>${esc(meMember().name)}</b>
+        ${groups.length ? `<span class="muted">·</span> ${myGroups.length
+          ? myGroups.map((id) => `<span class="badge">${esc(groupName(id))}</span>`).join(' ')
+          : '<span class="muted">not in a group yet (ask an admin)</span>'}` : ''}</p>` : ''}
     <section class="card">
       ${groups.length ? `
         <label for="group">Group</label>
-        <select id="group">${options(groups, startGroup)}</select>` : ''}
+        <select id="group">${options(groups.map((g) => ({ id: g.id, name: myGroups.includes(g.id) ? `${g.name} (your group)` : g.name })), startGroup)}</select>` : ''}
       <label>Who's out fishing</label>
       <div class="multi" id="fishers">
         <button type="button" class="multi-btn" aria-expanded="false"><span id="fishersText"></span><span aria-hidden="true">▾</span></button>

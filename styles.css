@@ -320,3 +320,6 @@ button.danger { background: var(--danger-bg); border-color: var(--red); color: v
 .member.inactive summary .n { color: var(--muted); text-decoration: line-through; }
 .member .chips { margin-top: 10px; }
 #fisherGroup { margin-bottom: 6px; }
+
+/* Who is signed in (Log page) */
+.whoami { margin: -4px 0 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
