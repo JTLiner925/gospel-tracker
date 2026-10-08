@@ -14,6 +14,7 @@ A phone-friendly web app for tracking gospel conversations while out fishing at 
 - **Groups** – admins sort team members and places into groups (each can be in several). On the Log screen you pick a group first, and "Who's out fishing" and "Where" then show only that group's people and places. A person or place with no group shows for every group.
 - **Sign-up** – after entering the team passcode, each person signs up with their name, their group(s) and their own 6-digit passcode. People a leader added sign in by choosing their name; the 6 digits they enter the first time become their passcode. Admins can reset a forgotten passcode in Settings.
 - **Admin passcode** – a second passcode. Only phones that have entered it (Settings → Admin) can change groups, team members, places or passcodes. The database enforces this, not just the screen.
+- **Notion hub** – the GOSPEL TRACKER page in Notion mirrors the app. Passcodes, groups, team members, places, people and follow-ups can be edited there and flow back to the app; the Door Log and the Fishing Tracker charts are a read-only copy. A sync runs every 5 minutes, and admins can run it on demand from Settings → Notion. See "Notion sync" below.
 
 The code is hosted free on **GitHub Pages** and the data lives in **Supabase**, a free Postgres database. The code can be public because it holds no data.
 
@@ -62,3 +63,20 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOi...';
 - Edit the dropdown options (methods, follow-up types, etc.) at the top of `app.js`.
 - After uploading changes to GitHub, phones will pick them up on the second time they open the app. This is because the app is cached for offline use.
 - Backups: Supabase → **Table Editor** → pick a table → **Export to CSV**.
+
+## Notion sync
+
+The sync is `supabase/functions/tracker-sync/index.ts`, a Supabase Edge Function. It holds the Notion secret, so the secret never reaches a phone or this repo.
+
+**Set up (once):**
+1. The Notion integration (the one the other Well apps use) must be connected to the **GOSPEL TRACKER** page: in Notion, open the page → ••• → Connections → add it. The workspace owner may need to do this.
+2. Supabase → Edge Functions → check that the `NOTION_TOKEN` secret exists (it is shared by every function in the project).
+3. Supabase → Edge Functions → **Deploy a new function** → **Via Editor**, name it exactly `tracker-sync`, paste all of `index.ts`, and deploy.
+4. Open the function's settings and turn **Verify JWT** off. The function checks the admin passcode or the schedule's key itself.
+5. Supabase → SQL Editor → run all of `supabase/add-notion-sync.sql`. This adds the bookkeeping table and a schedule that runs the sync every 5 minutes.
+
+**How conflicts are settled:** Groups, Team, Places and passcodes: Notion wins. People and Follow-ups: the app wins. The Door Log only goes from the app to Notion.
+
+**If something looks wrong:** the **Sync status** row in the hub's Passcodes table shows the last run and any error. Supabase → Edge Functions → tracker-sync → Logs has the detail.
+
+**After changing `index.ts`:** paste it into the Supabase editor again and redeploy. Pushing to GitHub does not update the function.

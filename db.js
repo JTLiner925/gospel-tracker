@@ -125,6 +125,27 @@ export async function signIn(name, pin) {
 
 export const resetPin = (memberId) => q(db().rpc('reset_pin', { p_member: memberId }));
 
+// --- Notion hub ---------------------------------------------------------------
+// Admins can ask the sync function to trade changes with Notion right now.
+
+export async function syncNotion() {
+  let res;
+  try {
+    res = await fetch(`${SUPABASE_URL}/functions/v1/tracker-sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-team-code': getCode(), 'x-admin-code': read(ADMIN_KEY, '') },
+      body: '{}',
+    });
+  } catch {
+    throw new Error('Couldn\'t reach the Notion sync. Either this phone is offline or the sync hasn\'t been set up yet.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(res.status === 404 ? 'The Notion sync hasn\'t been set up yet.' : data.message || `The sync didn't run (${res.status}).`);
+  }
+  return data;
+}
+
 export async function tryAdmin(adminCode) {
   const candidate = makeClient(getCode(), adminCode);
   const ok = await q(candidate.rpc('has_admin_code'));

@@ -50,6 +50,7 @@ const val = (sel, root = main) => ($(sel, root)?.value ?? '').trim() || null;
 
 const teamName = (id) => lists.team.find((t) => t.id === id)?.name ?? 'Unknown';
 const complexName = (id) => lists.complexes.find((c) => c.id === id)?.name ?? '';
+const NOTION_HUB = 'https://app.notion.com/p/3f380be0bac481c6ad18e3719e7b0dd8';
 const PLACE_KINDS = { apartments: 'Apartment complex', neighborhood: 'Neighborhood (houses)' };
 const UNIT_LABELS = { apartments: ['Building', 'Apt #'], neighborhood: ['Street', 'House #'] };
 const unitLabels = (id) => UNIT_LABELS[lists.complexes.find((c) => c.id === id)?.kind] ?? UNIT_LABELS.apartments;
@@ -1259,6 +1260,17 @@ async function viewSettings() {
       <p class="small muted">Hidden items stay in old records and stats but no longer appear in pick lists.</p>
     </section>
 
+    ${state === 'yes' ? `
+      <section class="card">
+        <h2>Notion</h2>
+        <p class="small muted" style="margin-top:0">The app and the Notion hub trade changes every 5 minutes. Tap to do it right now, for example after editing groups or passcodes in Notion.</p>
+        <div class="inline">
+          <button id="syncNotion">Sync with Notion now</button>
+          <a class="btn" href="${NOTION_HUB}" target="_blank" rel="noopener">Open the hub</a>
+        </div>
+        <p class="small" id="notionResult" style="margin-bottom:0"></p>
+      </section>` : ''}
+
     <section class="card">
       <h2>Passcodes</h2>
       <form id="changeCode">
@@ -1374,6 +1386,19 @@ async function viewSettings() {
       if (await store.tryAdmin($('#adminCode').value.trim())) { toast('Admin unlocked'); viewSettings(); }
       else toast('That admin passcode didn\'t work');
     } catch (err) { toast(`Couldn't check: ${err.message}`); }
+  });
+  $('#syncNotion')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    $('#notionResult').textContent = 'Syncing… this can take up to a minute.';
+    try {
+      const result = await store.syncNotion();
+      lists = await store.loadLists();
+      await viewSettings();
+      $('#notionResult').textContent = result.message;
+    } catch (err) {
+      $('#notionResult').textContent = err.message;
+      e.target.disabled = false;
+    }
   });
   $('#leaveAdmin')?.addEventListener('click', () => { store.forgetAdmin(); viewSettings(); });
   $('#signOut')?.addEventListener('click', () => { store.forgetMe(); store.forgetAdmin(); store.write('gt.today', {}); render(); });
