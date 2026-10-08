@@ -3,6 +3,8 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const CODE_KEY = 'gt.teamCode';
+const ADMIN_KEY = 'gt.adminCode';
+const ADMIN_STATE_KEY = 'gt.adminState';
 const LISTS_KEY = 'gt.lists';
 const QUEUE_KEY = 'gt.queue';
 
@@ -25,10 +27,12 @@ export function write(key, value) {
 
 let client = null;
 
-function makeClient(code) {
+function makeClient(code, adminCode = read(ADMIN_KEY, null)) {
+  const headers = { 'x-team-code': code };
+  if (adminCode) headers['x-admin-code'] = adminCode;
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { 'x-team-code': code } },
+    global: { headers },
   });
 }
 
@@ -63,26 +67,75 @@ export async function tryCode(code) {
 
 export const checkCode = () => q(db().rpc('has_team_code'));
 
+// --- Admin --------------------------------------------------------------------
+// 'yes'    this phone has entered the admin passcode
+// 'no'     it hasn't
+// 'legacy' the database hasn't had the groups/admin update yet, so nothing is locked
+
+export const adminState = () => read(ADMIN_STATE_KEY, 'no');
+export const isAdmin = () => adminState() !== 'no';
+export const adminIsPlaceholder = () => read(ADMIN_KEY, null) === 'CHANGE-ME-admin-passcode';
+
+const missing = (err) => ['PGRST202', 'PGRST205', '42883', '42P01'].includes(err?.code);
+
+export async function refreshAdmin() {
+  let state;
+  try {
+    state = (await q(db().rpc('has_admin_code'))) ? 'yes' : 'no';
+  } catch (err) {
+    if (!missing(err)) throw err;
+    state = 'legacy';
+  }
+  if (state === 'no' && read(ADMIN_KEY, null)) forgetAdmin(); // admin passcode was changed
+  write(ADMIN_STATE_KEY, state);
+  return state;
+}
+
+export async function tryAdmin(adminCode) {
+  const candidate = makeClient(getCode(), adminCode);
+  const ok = await q(candidate.rpc('has_admin_code'));
+  if (ok) {
+    write(ADMIN_KEY, adminCode);
+    write(ADMIN_STATE_KEY, 'yes');
+    client = candidate;
+  }
+  return ok;
+}
+
+export function forgetAdmin() {
+  try { localStorage.removeItem(ADMIN_KEY); } catch {}
+  write(ADMIN_STATE_KEY, 'no');
+  client = null;
+}
+
+export async function changeAdminCode(newCode) {
+  await q(db().rpc('change_admin_code', { new_code: newCode }));
+  write(ADMIN_KEY, newCode);
+  client = null;
+}
+
 export async function changeCode(newCode) {
   await q(db().rpc('change_team_code', { new_code: newCode }));
   write(CODE_KEY, newCode);
   client = makeClient(newCode);
 }
 
-// --- Team members & complexes (cached for offline use) -----------------------
+// --- Team members, groups & complexes (cached for offline use) ----------------
 
 export async function loadLists() {
   try {
-    const [team, complexes] = await Promise.all([
+    const [team, complexes, groups] = await Promise.all([
       q(db().from('team_members').select('*').order('name')),
       q(db().from('complexes').select('*').order('name')),
+      // No groups table until the groups/admin database update has been run.
+      q(db().from('groups').select('*').order('name')).catch((err) => { if (missing(err)) return []; throw err; }),
     ]);
-    const lists = { team, complexes };
+    const lists = { team, complexes, groups };
     write(LISTS_KEY, lists);
     return lists;
   } catch (err) {
     const cached = read(LISTS_KEY, null);
-    if (cached) return cached;
+    if (cached) return { groups: [], ...cached };
     throw err;
   }
 }

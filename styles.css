@@ -312,3 +312,11 @@ button:disabled { opacity: .5; }
 /* Delete */
 button.danger { background: var(--danger-bg); border-color: var(--red); color: var(--red); }
 
+
+/* Team members with groups (admin settings) */
+.member { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.member summary { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; cursor: pointer; }
+.member summary .n { font-weight: 600; }
+.member.inactive summary .n { color: var(--muted); text-decoration: line-through; }
+.member .chips { margin-top: 10px; }
+#fisherGroup { margin-bottom: 6px; }

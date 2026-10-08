@@ -39,7 +39,7 @@ const FOLLOW_KINDS = {
 // --- Helpers ------------------------------------------------------------------
 
 const main = document.getElementById('main');
-let lists = { team: [], complexes: [] };
+let lists = { team: [], complexes: [], groups: [] };
 let loginMessage = '';
 let personForLog = null; // set by "Log another conversation" on a person page
 
@@ -55,6 +55,9 @@ const UNIT_LABELS = { apartments: ['Building', 'Apt #'], neighborhood: ['Street'
 const unitLabels = (id) => UNIT_LABELS[lists.complexes.find((c) => c.id === id)?.kind] ?? UNIT_LABELS.apartments;
 const isHouses = (id) => lists.complexes.find((c) => c.id === id)?.kind === 'neighborhood';
 const activeTeam = () => lists.team.filter((t) => t.active);
+const activeGroups = () => (lists.groups ?? []).filter((g) => g.active);
+const groupName = (id) => (lists.groups ?? []).find((g) => g.id === id)?.name;
+const inGroup = (member, groupId) => !groupId || (member.group_ids ?? []).includes(groupId);
 const activeComplexes = () => lists.complexes.filter((c) => c.active);
 
 function where(o) {
@@ -189,6 +192,7 @@ function viewLogin() {
     try {
       if (await store.tryCode($('#code').value.trim())) {
         loginMessage = '';
+        try { await store.refreshAdmin(); } catch {}
         lists = await store.loadLists();
         render();
         store.flush();
@@ -221,11 +225,17 @@ function viewLog() {
       <div class="multi" id="fishers">
         <button type="button" class="multi-btn" aria-expanded="false"><span id="fishersText"></span><span aria-hidden="true">▾</span></button>
         <div class="multi-panel" hidden>
+          ${activeGroups().length ? `
+            <select id="fisherGroup" aria-label="Show group">
+              <option value="">Everyone</option>
+              ${options(activeGroups(), store.read('gt.fisherGroup', ''))}
+            </select>` : ''}
           <div id="fisherChecks"></div>
-          <div class="inline" style="margin-top:8px">
-            <input id="newFisher" placeholder="Add someone new" autocomplete="off">
-            <button type="button" id="addFisher">Add</button>
-          </div>
+          ${store.isAdmin() ? `
+            <div class="inline" style="margin-top:8px">
+              <input id="newFisher" placeholder="Add someone new" autocomplete="off">
+              <button type="button" id="addFisher">Add</button>
+            </div>` : ''}
           <button type="button" class="primary big" id="fishersDone" style="margin-top:10px">Done</button>
         </div>
       </div>
@@ -302,11 +312,19 @@ function viewLog() {
 
   // Who's out fishing: dropdown with checkboxes.
   const fisherBox = $('#fishers');
-  const fisherIds = () => $$('#fisherChecks input:checked').map((i) => i.value);
-  function drawFishers(selected) {
-    $('#fisherChecks').innerHTML = activeTeam().map((t) => `
-      <label class="check"><input type="checkbox" value="${t.id}" ${selected.includes(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')
-      || '<p class="small muted">No team members yet — add one below.</p>';
+  // Kept apart from the checkboxes so people stay selected when a group filter hides them.
+  const picked = new Set((day.fisher_ids ?? []).filter((id) => activeTeam().some((t) => t.id === id)));
+  const fisherIds = () => [...picked];
+  const fisherGroup = () => {
+    const id = $('#fisherGroup')?.value ?? '';
+    return activeGroups().some((g) => g.id === id) ? id : '';
+  };
+  function drawFishers() {
+    const group = fisherGroup();
+    const shown = activeTeam().filter((t) => inGroup(t, group) || picked.has(t.id));
+    $('#fisherChecks').innerHTML = shown.map((t) => `
+      <label class="check"><input type="checkbox" value="${t.id}" ${picked.has(t.id) ? 'checked' : ''}> ${esc(t.name)}</label>`).join('')
+      || `<p class="small muted">${group ? 'No one is in this group yet.' : 'No team members yet. An admin can add them in Settings.'}</p>`;
     updateFisherText();
   }
   function updateFisherText() {
@@ -318,27 +336,37 @@ function viewLog() {
     $('.multi-panel', fisherBox).hidden = !open;
     $('.multi-btn', fisherBox).setAttribute('aria-expanded', String(open));
   }
-  drawFishers(day.fisher_ids ?? []);
+  drawFishers();
   $('.multi-btn', fisherBox).addEventListener('click', () => openFishers($('.multi-panel', fisherBox).hidden));
   $('#fishersDone').addEventListener('click', () => openFishers(false));
-  $('#fisherChecks').addEventListener('change', () => { updateFisherText(); rememberDay(); });
+  $('#fisherGroup')?.addEventListener('change', () => {
+    store.write('gt.fisherGroup', fisherGroup());
+    drawFishers();
+  });
+  $('#fisherChecks').addEventListener('change', (e) => {
+    if (e.target.checked) picked.add(e.target.value); else picked.delete(e.target.value);
+    updateFisherText();
+    rememberDay();
+  });
   document.addEventListener('click', function closeFishers(e) {
     if (!document.contains(fisherBox)) return document.removeEventListener('click', closeFishers);
     if (!fisherBox.contains(e.target)) openFishers(false);
   });
-  $('#addFisher').addEventListener('click', async () => {
+  $('#addFisher')?.addEventListener('click', async () => {
     const name = val('#newFisher');
     if (!name) return;
     const id = crypto.randomUUID();
+    const group = fisherGroup();
     try {
-      await q(db().from('team_members').insert({ id, name }));
+      await q(db().from('team_members').insert(group ? { id, name, group_ids: [group] } : { id, name }));
       lists = await store.loadLists();
-      drawFishers([...fisherIds(), id]);
+      picked.add(id);
+      drawFishers();
       $('#newFisher').value = '';
       rememberDay();
       toast(`${name} added to the team`);
     } catch (err) {
-      toast(`Couldn't add (need signal): ${err.message}`);
+      toast(`Couldn't add: ${err.message}`);
     }
   });
 
@@ -1073,22 +1101,54 @@ async function viewStats() {
 // --- Settings -----------------------------------------------------------------
 
 async function viewSettings() {
+  try { await store.refreshAdmin(); } catch {}
   lists = await store.loadLists();
+  const state = store.adminState();
+  const admin = state !== 'no';
   const pending = store.queue();
+  const hideBtn = (table, r) =>
+    `<button type="button" class="link" data-toggle="${table}:${r.id}:${r.active}">${r.active ? 'Hide' : 'Restore'}</button>`;
   const listHtml = (table, rows, extra = () => '') => `
     <div class="settings-list">
       ${rows.map((r) => `
         <div class="entry ${r.active ? '' : 'inactive'}">
           <span class="n">${esc(r.name)}${extra(r)}</span>
-          <button class="link" data-toggle="${table}:${r.id}:${r.active}">${r.active ? 'Hide' : 'Restore'}</button>
+          ${hideBtn(table, r)}
         </div>`).join('') || '<p class="muted small">None yet.</p>'}
     </div>`;
+  const memberGroups = (m) => (m.group_ids ?? []).map(groupName).filter(Boolean);
 
-  main.innerHTML = `
-    <h1>Settings</h1>
+  const adminCards = !admin ? '' : `
+    ${state === 'legacy' ? `
+      <section class="card error">
+        <h2>Database update needed</h2>
+        <p class="small" style="margin:0">Groups and the admin lock turn on after the database update is run in Supabase. Until then, anyone with the team passcode can change these settings.</p>
+      </section>` : `
+      <section class="card">
+        <h2>Groups</h2>
+        ${listHtml('groups', lists.groups, (g) => {
+          const n = lists.team.filter((t) => t.active && inGroup(t, g.id)).length;
+          return `<br><span class="small muted">${n} member${n === 1 ? '' : 's'}</span>`;
+        })}
+        <form class="inline" id="addGroup"><input id="groupName" placeholder="Group name, e.g. Tuesday team" required><button class="primary">Add</button></form>
+      </section>`}
+
     <section class="card">
       <h2>Team members</h2>
-      ${listHtml('team_members', lists.team)}
+      ${state === 'legacy' ? listHtml('team_members', lists.team) : `
+        <div class="settings-list">
+          ${lists.team.map((m) => `
+            <details class="member ${m.active ? '' : 'inactive'}">
+              <summary><span class="n">${esc(m.name)}</span>
+                <span class="small muted">${memberGroups(m).map(esc).join(', ') || 'No group'}</span></summary>
+              ${activeGroups().length ? `
+                <div class="chips" data-group="mg" data-member="${m.id}">
+                  ${activeGroups().map((g) => `<button type="button" class="chip" data-value="${g.id}" aria-pressed="${inGroup(m, g.id)}">${esc(g.name)}</button>`).join('')}
+                </div>` : '<p class="small muted">Add a group above to sort people into groups.</p>'}
+              <p style="margin:8px 0 0">${hideBtn('team_members', m)}</p>
+            </details>`).join('') || '<p class="muted small">None yet.</p>'}
+        </div>
+        <p class="small muted">Tap a name to choose their groups. A person can be in more than one.</p>`}
       <form class="inline" id="addTeam"><input id="teamName" placeholder="Name" required><button class="primary">Add</button></form>
     </section>
 
@@ -1104,6 +1164,32 @@ async function viewSettings() {
     </section>
 
     <section class="card">
+      <h2>Passcodes</h2>
+      <form id="changeCode">
+        <label for="newCode">New team passcode (8+ characters)</label>
+        <input id="newCode" type="password" autocomplete="new-password" minlength="8" required>
+        <p class="small muted">Everyone will need the new passcode next time they open the app.</p>
+        <button class="primary">Change team passcode</button>
+      </form>
+      ${state === 'yes' ? `
+        <form id="changeAdmin" style="margin-top:18px">
+          <label for="newAdmin">New admin passcode (8+ characters)</label>
+          <input id="newAdmin" type="password" autocomplete="new-password" minlength="8" required>
+          <p class="small muted">Other admins will need the new one to keep making changes.</p>
+          <button class="primary">Change admin passcode</button>
+        </form>` : ''}
+    </section>`;
+
+  main.innerHTML = `
+    <h1>Settings</h1>
+    ${store.adminIsPlaceholder() ? `
+      <section class="card error">
+        <h2>Change the admin passcode</h2>
+        <p class="small" style="margin:0">The admin passcode is still the placeholder from the setup file, which anyone can read on GitHub. Set a new one under Passcodes below.</p>
+      </section>` : ''}
+    ${adminCards}
+
+    <section class="card">
       <h2>Sync</h2>
       <p>${pending.length ? `${pending.length} entr${pending.length === 1 ? 'y' : 'ies'} waiting to sync.` : 'Everything is synced. ✓'}</p>
       ${store.syncError() ? `<p class="overdue small">Last error: ${esc(store.syncError())}</p>` : ''}
@@ -1113,16 +1199,22 @@ async function viewSettings() {
       </div>
     </section>
 
+    ${state === 'no' ? `
+      <section class="card">
+        <h2>Admin</h2>
+        <form id="adminLogin">
+          <label for="adminCode">Admin passcode</label>
+          <input id="adminCode" type="password" autocomplete="off" required>
+          <p class="small muted">Admins manage groups, team members, places and passcodes.</p>
+          <button class="primary">Unlock admin</button>
+        </form>
+      </section>` : ''}
+
     <section class="card">
-      <h2>Team passcode</h2>
-      <form id="changeCode">
-        <label for="newCode">New passcode (8+ characters)</label>
-        <input id="newCode" type="password" autocomplete="new-password" minlength="8" required>
-        <p class="small muted">Everyone else will need the new passcode next time they open the app.</p>
-        <button class="primary">Change passcode</button>
-      </form>
-      <hr style="border:none;border-top:1px solid var(--line);margin:16px 0">
+      <h2>This phone</h2>
+      ${state === 'yes' ? '<p><button id="leaveAdmin">Leave admin mode</button></p>' : ''}
       <button id="lock">🔒 Lock this phone</button>
+      <p class="small muted">Locking signs this phone out. You'll need the team passcode to get back in.</p>
     </section>`;
 
   const refresh = async () => { lists = await store.loadLists(); viewSettings(); };
@@ -1135,11 +1227,27 @@ async function viewSettings() {
     const [table, id, active] = b.dataset.toggle.split(':');
     run(() => q(db().from(table).update({ active: active !== 'true' }).eq('id', id)), 'Updated');
   }));
-  $('#addTeam').addEventListener('submit', (e) => {
+  // Group chips under a team member save as soon as they're tapped.
+  $$('[data-group="mg"]').forEach((box) => box.addEventListener('chipchange', async () => {
+    const id = box.dataset.member;
+    const group_ids = $$('.chip[aria-pressed="true"]', box).map((c) => c.dataset.value);
+    try {
+      await q(db().from('team_members').update({ group_ids }).eq('id', id));
+      const member = lists.team.find((t) => t.id === id);
+      member.group_ids = group_ids;
+      $('summary .muted', box.closest('details')).textContent = memberGroups(member).join(', ') || 'No group';
+      store.write('gt.lists', lists);
+    } catch (err) { toast(`Couldn't save: ${err.message}`); }
+  }));
+  $('#addGroup')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    run(() => q(db().from('groups').insert({ name: val('#groupName') })), 'Group added');
+  });
+  $('#addTeam')?.addEventListener('submit', (e) => {
     e.preventDefault();
     run(() => q(db().from('team_members').insert({ name: val('#teamName') })), 'Team member added');
   });
-  $('#addComplex').addEventListener('submit', (e) => {
+  $('#addComplex')?.addEventListener('submit', (e) => {
     e.preventDefault();
     run(() => q(db().from('complexes').insert({ name: val('#cxName'), address: val('#cxAddr'), kind: $('#cxKind').value })), 'Place added');
   });
@@ -1147,10 +1255,22 @@ async function viewSettings() {
   $('#discard')?.addEventListener('click', () => {
     if (confirm('Throw away the entry that won\'t sync? This can\'t be undone.')) { store.discardFirst(); viewSettings(); }
   });
-  $('#changeCode').addEventListener('submit', (e) => {
+  $('#changeCode')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    run(() => store.changeCode($('#newCode').value), 'Passcode changed');
+    run(() => store.changeCode($('#newCode').value), 'Team passcode changed');
   });
+  $('#changeAdmin')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    run(() => store.changeAdminCode($('#newAdmin').value), 'Admin passcode changed');
+  });
+  $('#adminLogin')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      if (await store.tryAdmin($('#adminCode').value.trim())) { toast('Admin unlocked'); viewSettings(); }
+      else toast('That admin passcode didn\'t work');
+    } catch (err) { toast(`Couldn't check: ${err.message}`); }
+  });
+  $('#leaveAdmin')?.addEventListener('click', () => { store.forgetAdmin(); viewSettings(); });
   $('#lock').addEventListener('click', () => {
     if (store.queue().length && !confirm('Some entries haven\'t synced yet and will be lost. Lock anyway?')) return;
     try { localStorage.clear(); } catch {}
@@ -1177,6 +1297,7 @@ async function start() {
       } catch {}
     }
     if (store.getCode()) {
+      try { await store.refreshAdmin(); } catch {}
       try { lists = await store.loadLists(); } catch {}
       store.flush();
     }

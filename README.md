@@ -11,6 +11,8 @@ A phone-friendly web app for tracking gospel conversations while out fishing at 
 - **Stats** – doors knocked, conversations, gospel shares, salvations and breakdowns. **Copy report** puts a text summary on the clipboard for leaders.
 - **Works offline** – entries save on the phone and sync automatically when signal comes back.
 - **Team passcode** – the database returns nothing without it.
+- **Groups** – admins sort team members into groups (a person can be in several). On the Log screen, "Who's out fishing" has a group filter so the list only shows that group's names.
+- **Admin passcode** – a second passcode. Only phones that have entered it (Settings → Admin) can change groups, team members, places or passcodes. The database enforces this, not just the screen.
 
 The code is hosted free on **GitHub Pages** and the data lives in **Supabase**, a free Postgres database. The code can be public because it holds no data.
 
@@ -40,7 +42,7 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOi...';
 
 ### 4. First use
 1. Open the link, enter the passcode and go to **⚙︎ Settings**.
-2. Add your team members, then your places: choose **Apartment complex** or **Neighborhood (houses)** for each.
+2. Go to **Admin**, enter the admin passcode, then add your groups, team members and places: choose **Apartment complex** or **Neighborhood (houses)** for each.
 3. Send the link and passcode to the team, **separately** (don't put the passcode in the same text as the link).
 4. On each phone, allow **location** when asked so doors show on the map.
 5. On iPhone: in Safari, tap Share → **Add to Home Screen**. On Android: in Chrome, tap ⋮ → **Add to Home screen**. It then opens like a normal app.
@@ -49,7 +51,8 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOi...';
 
 ## Good practices for protecting people's information
 - Only record what you need to follow up well. First names are often enough.
-- Change the passcode (Settings → Team passcode) when someone leaves the team.
+- Change the team passcode (Settings → Passcodes, admins only) when someone leaves the team.
+- Give the admin passcode only to leaders. Change it if a leader steps down.
 - **Lock this phone** (in Settings) signs a borrowed or shared phone out.
 - The Supabase dashboard is the "master key": keep that login to yourself and one other leader.
 - Supabase's free tier pauses a project after about a week with no activity. Just open the dashboard and click **Restore** if that happens.
